@@ -20,13 +20,13 @@
     .tab-btn { background: #323b4e; border: none; color: #ccc; padding: 5px 12px; font-size: 12px; border-radius: 3px; cursor: pointer; }
     .tab-btn.active { background: #fff; color: #111; font-weight: bold; }
 
-    /* 대시보드 메인 레이아웃 */
-    .dashboard { display: grid; grid-template-columns: 380px 1fr; gap: 10px; }
+    /* 대시보드 전체 레이아웃 (좌우 5:5 비율 적용) */
+    .dashboard {  display: grid;  grid-template-columns: 1fr 1fr; /* 좌우 정확히 50% : 50% 분할 */ gap: 12px; }
     
     /* 좌측 패널 (지도 및 선택된 현장 기상정보) */
-    .left-panel { display: flex; flex-direction: column; gap: 10px; }
+     .left-panel { display: grid;grid-template-rows: 2.3fr 1fr; /* 상하 약 7:3 비율 분할 */gap: 12px; }
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 12px; }
-    .map-box { height: 320px; background: #e0f2fe; display: flex; align-items: center; justify-content: center; border-radius: 4px; position: relative; overflow: hidden; }
+    .map-box {  height: calc(100% - 40px); /* 카드 내부 높이에 맞춰 지도 영역 자동 확장 */ min-height: 280px;}
     
     .search-box { display: flex; gap: 6px; margin-top: 8px; }
     .search-box input { flex: 1; padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 3px; }
@@ -40,7 +40,7 @@
     .metric-value { font-size: 13px; font-weight: bold; margin-top: 4px; color: #0f172a; }
 
     /* 우측 패널 (전체/본부별 현황) */
-    .right-panel { display: flex; flex-direction: column; gap: 10px; }
+    .right-panel { display: grid; grid-template-rows: 2.3fr 1fr; /* 상하 약 7:3 비율 분할 */ gap: 12px; }
     .section-title { font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #334155; }
     
     .status-container { display: grid; grid-template-columns: 160px 1fr; gap: 10px; }
