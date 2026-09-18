@@ -4,10 +4,15 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>스마트 기상정보 모니터링 시스템 - 통합관리</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', sans-serif; background: #eaedf1; color: #1a1a18; padding: 10px; }
-    
+    :root {
+      --bg: #eaedf1; --surface: #ffffff; --border: #cbd5e1;
+      --text: #1e293b; --muted: #64748b; --primary: #0284c7;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', sans-serif; background: var(--bg); color: var(--text); padding: 10px; }
+
     /* 상단 헤더 */
     header { background: #1f2532; color: #fff; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; margin-bottom: 10px; }
     header h1 { font-size: 16px; font-weight: 600; }
@@ -15,54 +20,71 @@
     .tab-btn { background: #323b4e; border: none; color: #ccc; padding: 5px 12px; font-size: 12px; border-radius: 3px; cursor: pointer; }
     .tab-btn.active { background: #fff; color: #111; font-weight: bold; }
 
-    /* 대시보드 좌/우 메인 레이아웃 */
+    /* 대시보드 메인 레이아웃 */
     .dashboard { display: grid; grid-template-columns: 380px 1fr; gap: 10px; }
     
-    /* 좌측 패널 (지도 및 현장 정보) */
+    /* 좌측 패널 (지도 및 선택된 현장 기상정보) */
     .left-panel { display: flex; flex-direction: column; gap: 10px; }
-    .card { background: #fff; border: 1px solid #dcdfe6; border-radius: 4px; padding: 12px; }
-    .map-box { height: 350px; background: #e0f2fe; display: flex; align-items: center; justify-content: center; color: #0284c7; font-weight: bold; border-radius: 4px; position: relative; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 12px; }
+    .map-box { height: 320px; background: #e0f2fe; display: flex; align-items: center; justify-content: center; border-radius: 4px; position: relative; overflow: hidden; }
+    
     .search-box { display: flex; gap: 6px; margin-top: 8px; }
-    .search-box input { flex: 1; padding: 6px; font-size: 12px; border: 1px solid #ccc; border-radius: 3px; }
-    .site-metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 10px; text-align: center; }
+    .search-box input { flex: 1; padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 3px; }
+
+    /* 현장 기상 메트릭 영역 */
+    .site-card-title { font-size: 13px; font-weight: bold; color: #0f172a; display: flex; justify-content: space-between; align-items: center; }
+    .site-card-addr { font-size: 11px; color: var(--muted); margin-top: 2px; margin-bottom: 8px; }
+    .site-metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; text-align: center; }
     .metric-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 2px; }
-    .metric-label { font-size: 10px; color: #64748b; }
-    .metric-value { font-size: 13px; font-weight: bold; margin-top: 4px; }
+    .metric-label { font-size: 10px; color: var(--muted); }
+    .metric-value { font-size: 13px; font-weight: bold; margin-top: 4px; color: #0f172a; }
 
     /* 우측 패널 (전체/본부별 현황) */
     .right-panel { display: flex; flex-direction: column; gap: 10px; }
-    .section-title { font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #334155; display: flex; align-items: center; gap: 6px; }
+    .section-title { font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #334155; }
     
-    /* 특보 현황 그리드 */
     .status-container { display: grid; grid-template-columns: 160px 1fr; gap: 10px; }
-    .summary-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px; text-align: center; }
+    .summary-box { background: #f8fafc; border: 1px solid var(--border); border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px; text-align: center; }
     .summary-box .count { font-size: 24px; font-weight: bold; color: #0f172a; margin-top: 4px; }
     
     .alert-list { display: flex; flex-direction: column; gap: 6px; }
-    .alert-row { display: flex; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden; height: 32px; align-items: center; }
-    .alert-label { width: 90px; background: #f1f5f9; font-size: 11px; font-weight: bold; text-align: center; line-height: 32px; border-right: 1px solid #cbd5e1; }
-    .alert-count { width: 50px; text-align: center; font-size: 12px; font-weight: bold; border-right: 1px solid #cbd5e1; }
+    .alert-row { display: flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; height: 32px; align-items: center; }
+    .alert-label { width: 90px; background: #f1f5f9; font-size: 11px; font-weight: bold; text-align: center; border-right: 1px solid var(--border); line-height: 32px; }
+    .alert-count { width: 50px; text-align: center; font-size: 12px; font-weight: bold; border-right: 1px solid var(--border); }
     .alert-regions { flex: 1; padding: 0 10px; font-size: 11px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    /* 16개 지역 선택 버튼 (세종 삭제 적용) */
+    /* 16개 지역 선택 버튼 */
     .region-buttons { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-top: 10px; }
-    .region-btn { background: #fff; border: 1px solid #cbd5e1; padding: 6px 0; font-size: 11px; text-align: center; cursor: pointer; border-radius: 3px; }
-    .region-btn:hover { background: #e2e8f0; }
+    .region-btn { background: #fff; border: 1px solid var(--border); padding: 7px 0; font-size: 11px; text-align: center; cursor: pointer; border-radius: 3px; font-weight: 500; }
+    .region-btn:hover { background: #e2e8f0; color: var(--primary); }
 
-    /* 본부별 현황 테이블 */
+    /* 본부별 테이블 */
     .hq-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 11px; text-align: center; }
-    .hq-table th, .hq-table td { border: 1px solid #cbd5e1; padding: 6px; }
-    .hq-table th { background: #f1f5f9; font-color: #334155; }
+    .hq-table th, .hq-table td { border: 1px solid var(--border); padding: 6px; }
+    .hq-table th { background: #f1f5f9; }
 
-    /* 반응형 레이아웃 */
+    /* 모달 팝업 */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; }
+    .modal-overlay.open { opacity: 1; pointer-events: auto; }
+    .modal { background: #fff; border-radius: 6px; width: 100%; max-width: 480px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+    .modal-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .modal-header h2 { font-size: 15px; font-weight: 600; }
+    .modal-close { background: none; border: none; font-size: 18px; color: var(--muted); cursor: pointer; }
+    .modal-body { overflow-y: auto; flex: 1; }
+    .site-list { list-style: none; }
+    .site-item { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
+    .site-item:hover { background: #f1f5f9; }
+    .site-item-name { font-size: 13px; font-weight: 600; color: #0f172a; }
+    .site-item-addr { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
     @media (max-width: 900px) {
       .dashboard { grid-template-columns: 1fr; }
+      .region-buttons { grid-template-columns: repeat(4, 1fr); }
     }
   </style>
 </head>
 <body>
 
-  <!-- 헤더 -->
   <header>
     <h1>스마트 기상정보 모니터링 시스템</h1>
     <div class="nav-tabs">
@@ -72,43 +94,64 @@
     </div>
   </header>
 
-  <!-- 메인 대시보드 레이아웃 -->
   <div class="dashboard">
     
-    <!-- 좌측 영역: 지도 및 현장 정보 -->
+    <!-- 좌측: 지도 & 선택된 현장 상세 기상 정보 -->
     <div class="left-panel">
       <div class="card">
-        <div class="map-box" id="map">
-          카카오 지도 / D3 지도 영역
+        <div class="map-box" id="map-container">
+          <span style="color:var(--muted); font-size:12px;">지도 불러오는 중...</span>
         </div>
         <div class="search-box">
-          <input type="text" placeholder="현장명 검색..."/>
+          <input type="text" id="searchInput" placeholder="현장명 검색..." onkeyup="filterSites()"/>
         </div>
       </div>
 
-      <!-- 선택된 현장 상세 기상 정보 -->
-      <div class="card">
-        <div style="font-size: 12px; font-weight: bold; margin-bottom: 4px;">현장을 선택하세요</div>
+      <!-- 선택한 현장 상세 정보 카드 -->
+      <div class="card" id="selectedSiteCard">
+        <div class="site-card-title">
+          <span id="dispSiteName">현장을 선택하세요</span>
+          <span id="dispWeatherIcon" style="font-size:18px;"></span>
+        </div>
+        <div class="site-card-addr" id="dispSiteAddr">지역 버튼이나 지도에서 현장을 클릭하면 상세 날씨가 표시됩니다.</div>
+        
         <div class="site-metrics">
-          <div class="metric-item"><div class="metric-label">강수</div><div class="metric-value">-</div></div>
-          <div class="metric-item"><div class="metric-label">온도</div><div class="metric-value">-°C</div></div>
-          <div class="metric-item"><div class="metric-label">습도</div><div class="metric-value">-%</div></div>
-          <div class="metric-item"><div class="metric-label">체감온도</div><div class="metric-value" style="color:#d97706;">-°C</div></div>
-          <div class="metric-item"><div class="metric-label">풍속</div><div class="metric-value">-m/s</div></div>
-          <div class="metric-item"><div class="metric-label">미세먼지</div><div class="metric-value">-</div></div>
+          <div class="metric-item">
+            <div class="metric-label">강수</div>
+            <div class="metric-value" id="valPty">-</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">온도</div>
+            <div class="metric-value" id="valTemp">-°C</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">습도</div>
+            <div class="metric-value" id="valHumidity">-%</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">체감온도</div>
+            <div class="metric-value" id="valFeels" style="color:#d97706;">-°C</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">풍속</div>
+            <div class="metric-value" id="valWind">-m/s</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">상태</div>
+            <div class="metric-value" id="valMeta">-</div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- 우측 영역: 전체/본부별 현황 -->
+    <!-- 우측: 전체 현장 및 본부별 현황 -->
     <div class="right-panel">
       
-      <!-- [전체 현장 현황] -->
       <div class="card">
         <div class="section-title">[전체 현장 현황]</div>
         <div class="status-container">
           <div class="summary-box">
-            <div style="font-size: 11px; color: #64748b;">전체 현장</div>
+            <div style="font-size: 11px; color: var(--muted);">전체 현장</div>
             <div class="count">112개</div>
           </div>
           <div class="alert-list">
@@ -135,28 +178,27 @@
           </div>
         </div>
 
-        <!-- 총 16개 지역 버튼 (세종 삭제 반영) -->
+        <!-- 16개 지역 선택 버튼 -->
         <div class="region-buttons">
-          <div class="region-btn">서울</div>
-          <div class="region-btn">경기</div>
-          <div class="region-btn">인천</div>
-          <div class="region-btn">강원</div>
-          <div class="region-btn">충북</div>
-          <div class="region-btn">충남</div>
-          <div class="region-btn">대전</div>
-          <div class="region-btn">경북</div>
-          <div class="region-btn">대구</div>
-          <div class="region-btn">경남</div>
-          <div class="region-btn">부산</div>
-          <div class="region-btn">울산</div>
-          <div class="region-btn">전북</div>
-          <div class="region-btn">전남</div>
-          <div class="region-btn">광주</div>
-          <div class="region-btn">제주</div>
+          <div class="region-btn" onclick="openModal('서울')">서울</div>
+          <div class="region-btn" onclick="openModal('경기')">경기</div>
+          <div class="region-btn" onclick="openModal('인천')">인천</div>
+          <div class="region-btn" onclick="openModal('강원')">강원</div>
+          <div class="region-btn" onclick="openModal('충북')">충북</div>
+          <div class="region-btn" onclick="openModal('충남')">충남</div>
+          <div class="region-btn" onclick="openModal('대전')">대전</div>
+          <div class="region-btn" onclick="openModal('경북')">경북</div>
+          <div class="region-btn" onclick="openModal('대구')">대구</div>
+          <div class="region-btn" onclick="openModal('경남')">경남</div>
+          <div class="region-btn" onclick="openModal('부산')">부산</div>
+          <div class="region-btn" onclick="openModal('울산')">울산</div>
+          <div class="region-btn" onclick="openModal('전북')">전북</div>
+          <div class="region-btn" onclick="openModal('전남')">전남</div>
+          <div class="region-btn" onclick="openModal('광주')">광주</div>
+          <div class="region-btn" onclick="openModal('제주')">제주</div>
         </div>
       </div>
 
-      <!-- [본부별 현황] -->
       <div class="card">
         <div class="section-title">[본부별 현황]</div>
         <table class="hq-table">
@@ -169,30 +211,10 @@
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td style="font-weight: bold;">건축사업본부</td>
-              <td>0개</td>
-              <td>0개</td>
-              <td>0개</td>
-            </tr>
-            <tr>
-              <td style="font-weight: bold;">토목사업본부</td>
-              <td>0개</td>
-              <td>0개</td>
-              <td>0개</td>
-            </tr>
-            <tr>
-              <td style="font-weight: bold;">플랜트사업본부</td>
-              <td>0개</td>
-              <td>0개</td>
-              <td>0개</td>
-            </tr>
-            <tr>
-              <td style="font-weight: bold;">글로벌인프라본부</td>
-              <td>0개</td>
-              <td>0개</td>
-              <td>0개</td>
-            </tr>
+            <tr><td style="font-weight: bold;">건축사업본부</td><td>0개</td><td>0개</td><td>0개</td></tr>
+            <tr><td style="font-weight: bold;">토목사업본부</td><td>0개</td><td>0개</td><td>0개</td></tr>
+            <tr><td style="font-weight: bold;">플랜트사업본부</td><td>0개</td><td>0개</td><td>0개</td></tr>
+            <tr><td style="font-weight: bold;">글로벌인프라본부</td><td>0개</td><td>0개</td><td>0개</td></tr>
           </tbody>
         </table>
       </div>
@@ -200,5 +222,262 @@
     </div>
   </div>
 
+  <!-- 현장 목록 모달 팝업 -->
+  <div class="modal-overlay" id="modal" onclick="closeModal(event)">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-title">현장 목록</h2>
+        <button class="modal-close" onclick="closeModalDirect()">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <script>
+    // ── 현장별 좌표 & 목록 데이터 ──────────────────────────────────
+    const SITE_COORDS = {
+      "고척푸르지오힐스테이트": { nx:58, ny:125 }, "노량진5구역재개발": { nx:59, ny:126 }, "리버센트푸르지오위브": { nx:59, ny:126 },
+      "마포푸르지오어반피스": { nx:59, ny:126 }, "세운633오피스": { nx:60, ny:127 }, "수표구역오피스빌딩": { nx:60, ny:127 },
+      "신림2구역주택재개발정비": { nx:59, ny:125 }, "써밋더힐": { nx:60, ny:125 }, "써밋클라비온": { nx:59, ny:125 },
+      "장위푸르지마크원": { nx:61, ny:128 }, "푸르지오라디우스파크": { nx:61, ny:128 }, "도림천빗물배수터널": { nx:60, ny:126 },
+      "동부간선도로지하화(민자)1공구": { nx:61, ny:127 }, "동부간선도로지하화(민자)2공구": { nx:61, ny:127 },
+      "동부간선도로지하화(민자)4공구": { nx:61, ny:127 }, "동부간선도로지하화(영동대로)": { nx:61, ny:125 },
+      "서울도시철도9호선연장1공구": { nx:63, ny:126 }, "교산푸르지오더퍼스트": { nx:64, ny:126 }, "남양주왕숙A-3BL민간참여공공주택": { nx:64, ny:130 },
+      "양주역푸르지오센터파크": { nx:61, ny:132 }, "왕숙푸르지오더퍼스트1단지": { nx:64, ny:130 }, "왕숙푸르지오더퍼스트2단지": { nx:64, ny:130 },
+      "의정부푸르지오클라시엘": { nx:61, ny:130 }, "탑석푸르지오파크7": { nx:61, ny:130 }, "양평이천고속도로1공구": { nx:67, ny:122 },
+      "GTX-B5공구": { nx:65, ny:129 }, "김포한강시네폴리스주상복합신축사업": { nx:55, ny:128 }, "송내역푸르지오센트비엔": { nx:60, ny:125 },
+      "풍무역푸르지오더마크": { nx:55, ny:128 }, "GTX-B2공구": { nx:60, ny:125 }, "금정역푸르지오그랑블": { nx:59, ny:122 },
+      "과천5단지재건축": { nx:60, ny:124 }, "동탄포레파크자연앤푸르지오": { nx:62, ny:118 }, "망포역푸르지오르마크": { nx:61, ny:120 },
+      "브레인시티푸르지오": { nx:61, ny:115 }, "산성역헤리스톤": { nx:63, ny:124 }, "식사푸르지오파크센트": { nx:56, ny:129 },
+      "수원영통1구역주택재개발정비": { nx:61, ny:120 }, "용인푸르지오원클러스터파크": { nx:65, ny:120 }, "용인푸르지오원클러스터1단지": { nx:64, ny:119 },
+      "용인푸르지오원클러스터2,3단지": { nx:64, ny:119 }, "용인푸르지오클루센트": { nx:63, ny:120 }, "청북하늘빛호수공원조성": { nx:58, ny:115 },
+      "평택고덕A56민간참여공공주택": { nx:62, ny:114 }, "평택미군독신숙소(4단계)": { nx:61, ny:114 }, "평택푸르지오센터파인": { nx:60, ny:114 },
+      "G-TOWN 개발사업신축공사": { nx:60, ny:124 }, "과천지식정보타운지구조성현장(토목)": { nx:60, ny:124 }, "수원당수소음저감시설": { nx:60, ny:120 },
+      "수원대유평지구기반시설": { nx:60, ny:121 }, "오산대미시설": { nx:61, ny:115 }, "용인은화삼지구기반시설": { nx:64, ny:119 },
+      "평택오송철도1공구": { nx:62, ny:114 }, "화성화옹농업단지5공구": { nx:56, ny:118 }, "풍무역세권부지조성": { nx:55, ny:128 },
+      "검단신도시푸르지오더파크": { nx:55, ny:127 }, "용현학익1-6BL공공지원민간임대리츠": { nx:55, ny:124 }, "운서역푸르지오더스카이2차": { nx:51, ny:125 },
+      "인천계양A-10BL아파트건설공사4공구": { nx:56, ny:126 }, "인하대역푸르지오에듀포레": { nx:55, ny:124 }, "청라피크원푸르지오": { nx:54, ny:126 },
+      "푸르지오스타셀라49": { nx:54, ny:126 }, "검단2일반산업단지": { nx:54, ny:127 }, "송도11-1공구4구역기반시설": { nx:54, ny:123 },
+      "수도권3매립장": { nx:53, ny:127 }, "GTX-B1공구": { nx:56, ny:124 }, "관저푸르지오센트럴파크": { nx:67, ny:100 },
+      "그랑르피에드": { nx:67, ny:100 }, "논산푸르지오더퍼스트": { nx:62, ny:97 }, "도안푸르지오디아델1단지": { nx:66, ny:101 },
+      "도안푸르지오디아델2단지": { nx:66, ny:101 }, "업성푸르지오레이크시티1단지": { nx:63, ny:111 }, "업성푸르지오레이크시티2단지": { nx:63, ny:111 },
+      "탕정푸르지오리버파크": { nx:62, ny:110 }, "탕정푸르지오센터파크": { nx:62, ny:110 }, "당진기지항만": { nx:54, ny:112 },
+      "세종안성고속도로6공구": { nx:64, ny:111 }, "천안환경클러스터": { nx:65, ny:109 }, "신영지웰푸르지오테크노폴리스센트럴": { nx:68, ny:108 },
+      "청주센텀푸르지오자이": { nx:69, ny:107 }, "청주푸르지오씨엘리체": { nx:68, ny:106 }, "남청주현도산업단지": { nx:69, ny:105 },
+      "청주첨단산업단지": { nx:68, ny:107 }, "군산대미전기시설": { nx:55, ny:91 }, "장성파인데이터센터": { nx:57, ny:77 },
+      "강진광주고속도로1공구": { nx:57, ny:63 }, "광주대미급유시설공사": { nx:57, ny:74 }, "압해화원도로2공구": { nx:49, ny:68 },
+      "진도초평항": { nx:47, ny:59 }, "양양생활형숙박시설": { nx:88, ny:138 }, "원주푸르지오더센트럴": { nx:76, ny:122 },
+      "강릉비행장": { nx:93, ny:132 }, "동해신항기타광석부두": { nx:97, ny:127 }, "동해항취배수로이설": { nx:97, ny:127 },
+      "홍천양수발전소1,2호기": { nx:75, ny:130 }, "운문댐안전성강화": { nx:95, ny:86 }, "가야1구역재개발": { nx:97, ny:75 },
+      "거제푸르지오마린피스": { nx:90, ny:69 }, "괴정3구역재건축정비": { nx:96, ny:74 }, "김해삼계푸르지오센트럴파크": { nx:95, ny:77 },
+      "동래푸르지오에듀포레": { nx:98, ny:76 }, "문현푸르지오트레시엘": { nx:98, ny:75 }, "블랑써밋74": { nx:97, ny:75 },
+      "서면써밋더뉴": { nx:98, ny:75 }, "써밋리미티드남천": { nx:98, ny:75 }, "에코델타시티푸르지오트레파크": { nx:94, ny:75 },
+      "용호2구역재개발": { nx:98, ny:75 }, "창원상남1구역재건축": { nx:91, ny:77 }, "창원푸르지오파크베뉴": { nx:91, ny:76 },
+      "고리원전항만보강": { nx:102, ny:79 }, "진해신항남측방파호안1공구": { nx:91, ny:74 }, "진해신항투기장호안2공구": { nx:91, ny:74 },
+      "수출용신형연구용원자로 건설공사PJ": { nx:102, ny:79 }, "울산 북항터미널 3단계건설공사PJ": { nx:103, ny:82 }, "제주덕천": { nx:58, ny:39 }
+    };
+
+    const SITES = {
+      '서울': [
+        { name:'고척푸르지오힐스테이트', addr:'서울 구로구 고척동 172-141' }, { name:'노량진5구역재개발', addr:'서울 동작구 노량진동 274-5' },
+        { name:'리버센트푸르지오위브', addr:'서울 영등포구 영등포동 5가 32-8' }, { name:'마포푸르지오어반피스', addr:'서울 마포구 아현동 613-1' },
+        { name:'세운633오피스', addr:'서울 중구 마른내로 71' }, { name:'수표구역오피스빌딩', addr:'서울 중구 입정동 237' },
+        { name:'신림2구역주택재개발정비', addr:'서울 관악구 신림동 324-25번지 일원' }, { name:'써밋더힐', addr:'서울 동작구 현충로14길 15' },
+        { name:'써밋클라비온', addr:'서울 영등포구 신길동 3950' }, { name:'장위푸르지마크원', addr:'서울 성북구 돌곶이로 22길 47' },
+        { name:'푸르지오라디우스파크', addr:'서울 성북구 장위동 25-55번지 일원' }, { name:'도림천빗물배수터널', addr:'서울 용산구 한강대로 256' },
+        { name:'동부간선도로지하화(민자)1공구', addr:'서울 성동구 송정동 73-37' }, { name:'동부간선도로지하화(민자)2공구', addr:'서울 성동구 용답동 250-8' },
+        { name:'동부간선도로지하화(민자)4공구', addr:'서울 성동구 용답동 250-8' }, { name:'동부간선도로지하화(영동대로)', addr:'서울 강남구 역삼로107길 20-41' },
+        { name:'서울도시철도9호선연장1공구', addr:'서울 강동구 천중로 213' }
+      ],
+      '경기': [
+        { name:'교산푸르지오더퍼스트', addr:'경기도 하남시 천현로 34-1' }, { name:'남양주왕숙A-3BL민간참여공공주택', addr:'경기도 남양주시 진접읍 연평리 767' },
+        { name:'양주역푸르지오센터파크', addr:'경기도 양주시 남방동 산14-3' }, { name:'왕숙푸르지오더퍼스트1단지', addr:'경기도 남양주시 진접읍 연평리 778' },
+        { name:'왕숙푸르지오더퍼스트2단지', addr:'경기도 남양주시 진접읍 양진로 725' }, { name:'의정부푸르지오클라시엘', addr:'경기도 의정부시 금오동 369-5' },
+        { name:'탑석푸르지오파크7', addr:'경기도 의정부시 용현동 267-8' }, { name:'양평이천고속도로1공구', addr:'경기도 광주시 곤지암읍 신촌리 233' },
+        { name:'GTX-B5공구', addr:'경기도 남양주시 화도읍 경춘로 2155' }, { name:'김포한강시네폴리스주상복합신축사업', addr:'경기 김포시 고촌읍 향산리 588-25' },
+        { name:'송내역푸르지오센트비엔', addr:'경기도 부천시 송내동 339' }, { name:'풍무역푸르지오더마크', addr:'경기 김포시 사우로 118' },
+        { name:'GTX-B2공구', addr:'경기도 부천시 원미구 길주로 249' }, { name:'금정역푸르지오그랑블', addr:'경기도 군포시 금정동 148-3' },
+        { name:'과천5단지재건축', addr:'경기도 과천시 별양로 6번지' }, { name:'동탄포레파크자연앤푸르지오', addr:'경기도 화성시 산척동 748' },
+        { name:'망포역푸르지오르마크', addr:'경기도 수원시 영통구 덕영대로 1556번길 16' }, { name:'브레인시티푸르지오', addr:'경기도 평택시 장안동 171' },
+        { name:'산성역헤리스톤', addr:'경기도 성남시 수정구 수정로 342번길 15-10 일원' }, { name:'식사푸르지오파크센트', addr:'경기도 고양시 일산서구 경의로 790' },
+        { name:'수원영통1구역주택재개발정비', addr:'경기도 수원시 영통구 매탄동 173-50' }, { name:'용인푸르지오원클러스터파크', addr:'경기도 용인시 처인구 양지면 양지리 194번지 일원' },
+        { name:'용인푸르지오원클러스터1단지', addr:'경기도 용인시 처인구 남동 127-1' }, { name:'용인푸르지오원클러스터2,3단지', addr:'경기도 용인시 처인구 백옥대로 958' },
+        { name:'용인푸르지오클루센트', addr:'경기도 용인시 처인구 역북동 811' }, { name:'청북하늘빛호수공원조성', addr:'경기도 평택시 청북읍 옥길리 1137' },
+        { name:'평택고덕A56민간참여공공주택', addr:'경기도 평택시 고덕동 2690-1' }, { name:'평택미군독신숙소(4단계)', addr:'경기도 평택시 팽성읍 도두리 120-1' },
+        { name:'평택푸르지오센터파인', addr:'경기도 평택시 현덕면 화양리 790-4' }, { name:'G-TOWN 개발사업신축공사', addr:'경기도 과천시 과천대로7길 33' },
+        { name:'과천지식정보타운지구조성현장(토목)', addr:'경기도 과천시 샛말로 33' }, { name:'수원당수소음저감시설', addr:'경기도 수원시 권선구 당수로 112' },
+        { name:'수원대유평지구기반시설', addr:'경기도 수원시 장안구 정자동 900-1' }, { name:'오산대미시설', addr:'경기도 평택시 서탄면 고덕북로 114' },
+        { name:'용인은화삼지구기반시설', addr:'경기도 용인시 처인구 남동 388-3' }, { name:'평택오송철도1공구', addr:'경기도 평택시 팽성읍 석근길 67' },
+        { name:'화성화옹농업단지5공구', addr:'경기도 화성시 남양읍 장덕서길 108' }, { name:'풍무역세권부지조성', addr:'경기도 김포시 김포대로 703' }
+      ],
+      '인천': [
+        { name:'검단신도시푸르지오더파크', addr:'인천 서구 마전동 산119-9' }, { name:'용현학익1-6BL공공지원민간임대리츠', addr:'인천 미추홀구 학익동 595-30' },
+        { name:'운서역푸르지오더스카이2차', addr:'인천 중구 영종대로278번길 34' }, { name:'인천계양A-10BL아파트건설공사4공구', addr:'인천 계양구 동양동 448-1 일원' },
+        { name:'인하대역푸르지오에듀포레', addr:'인천 미추홀구 학익동 320번지 일원' }, { name:'청라피크원푸르지오', addr:'인천 서구 청라동 86-6' },
+        { name:'푸르지오스타셀라49', addr:'인천 서구 미래로11' }, { name:'검단2일반산업단지', addr:'인천 서구 완정로8' },
+        { name:'송도11-1공구4구역기반시설', addr:'인천 연수구 송도동 474-1' }, { name:'수도권3매립장', addr:'인천 서구 거월로 61' },
+        { name:'GTX-B1공구', addr:'인천 남동구 남촌로 139' }
+      ],
+      '충남': [
+        { name:'관저푸르지오센트럴파크', addr:'대전 서구 계백로 1106' }, { name:'그랑르피에드', addr:'대전 서구 둔산동 1380-2' },
+        { name:'논산푸르지오더퍼스트', addr:'충청남도 논산시 연무읍 안심리 26-1' }, { name:'도안푸르지오디아델1단지', addr:'대전 유성구 용계동 70' },
+        { name:'도안푸르지오디아델2단지', addr:'대전 유성구 용계동 73-48' }, { name:'업성푸르지오레이크시티1단지', addr:'충청남도 천안시 서북구 업성동 362' },
+        { name:'업성푸르지오레이크시티2단지', addr:'충청남도 천안시 서북구 업성동 370-1' }, { name:'탕정푸르지오리버파크', addr:'충청남도 아산시 탕정면 갈산리 609-7' },
+        { name:'탕정푸르지오센터파크', addr:'충청남도 아산시 탕정면 갈산리 625-8' }, { name:'당진기지항만', addr:'충청남도 당진시 송산면 동곡리3-1' },
+        { name:'세종안성고속도로6공구', addr:'충청남도 천안시 동남구 북면 상동리 212-3' }, { name:'천안환경클러스터', addr:'충청남도 천안시 동남구 성남면 대화리 377' }
+      ],
+      '대전': [], '세종': [], '강원': [
+        { name:'양양생활형숙박시설', addr:'강원도 양양군 강현면 전진리 7-3' }, { name:'원주푸르지오더센트럴', addr:'강원도 원주시 원동 274-40' },
+        { name:'강릉비행장', addr:'강원도 강릉시 남항진동' }, { name:'동해신항기타광석부두', addr:'강원도 동해시 구호동 215' },
+        { name:'동해항취배수로이설', addr:'강원도 동해시 단봉동 97-5' }, { name:'홍천양수발전소1,2호기', addr:'강원도 홍천군 홍천읍 갈마곡리 45-4' }
+      ],
+      '충북': [
+        { name:'신영지웰푸르지오테크노폴리스센트럴', addr:'충청북도 청주시 흥덕구 송절동 산 4-2' }, { name:'청주센텀푸르지오자이', addr:'충청북도 청주시 서원구 사직동 241-1' },
+        { name:'청주푸르지오씨엘리체', addr:'충청북도 청주시 서원구 미평동' }, { name:'남청주현도산업단지', addr:'충청북도 청주시 서원구 현도면 달계노산로 11' },
+        { name:'청주첨단산업단지', addr:'충청북도 청주시 흥덕구 직지대로49번길 45' }
+      ],
+      '전북': [{ name:'군산대미전기시설', addr:'전라북도 군산시 옥서면' }],
+      '전남': [
+        { name:'장성파인데이터센터', addr:'전라남도 장성군 남면 삼태리 412-17' }, { name:'강진광주고속도로1공구', addr:'전라남도 강진군 작천면 갈동로 75' },
+        { name:'광주대미급유시설공사', addr:'광주 광산구 상무대로 420-25' }, { name:'압해화원도로2공구', addr:'전라남도 신안군 압해읍 장감길 148' },
+        { name:'진도초평항', addr:'전라남도 진도군 의신면 초사리 390-20' }
+      ],
+      '광주': [], '경북': [{ name:'운문댐안전성강화', addr:'경상북도 청도군 운문면 운문로 2490' }],
+      '대구': [], '경남': [
+        { name:'가야1구역재개발', addr:'부산 부산진구 가야동 408' }, { name:'거제푸르지오마린피스', addr:'경남 거제시 장평동 1' },
+        { name:'괴정3구역재건축정비', addr:'부산 사하구 낙동대로 249번길 48' }, { name:'김해삼계푸르지오센트럴파크', addr:'경상남도 김해시 삼계동 1027-3' },
+        { name:'동래푸르지오에듀포레', addr:'부산 동래구 안락로 101번길16' }, { name:'문현푸르지오트레시엘', addr:'부산 남구 문현동 산23 일원' },
+        { name:'블랑써밋74', addr:'부산 동구 범일동 330-226' }, { name:'서면써밋더뉴', addr:'부산 부산진구 전포동 668-1' },
+        { name:'써밋리미티드남천', addr:'부산 수영구 남천동 545-2' }, { name:'에코델타시티푸르지오트레파크', addr:'부산 강서구 강동동 4995-8' },
+        { name:'용호2구역재개발', addr:'부산 남구 용호동 434 일원' }, { name:'창원상남1구역재건축', addr:'경상남도 창원시 성산구 상남로 48' },
+        { name:'창원푸르지오파크베뉴', addr:'경상남도 창원시 성산구 가음동 24-1' }, { name:'고리원전항만보강', addr:'부산 기장군 장안읍 길친길 96-1' },
+        { name:'진해신항남측방파호안1공구', addr:'경상남도 창원시 진해구 신항4로 58' }, { name:'진해신항투기장호안2공구', addr:'경상남도 창원시 진해구 신항4로 58' },
+        { name:'수출용신형연구용원자로 건설공사PJ', addr:'부산 기장군 장안읍 좌동리 288-7' }, { name:'울산 북항터미널 3단계건설공사PJ', addr:'울산 남구 신항로 852번길 41' }
+      ],
+      '부산': [], '울산': [], '제주': [{ name:'제주덕천', addr:'제주도 제주시 구좌읍 덕천리 산68' }]
+    };
+
+    // ── 유틸 함수들 ─────────────────────────────────────────────
+    function getApiBase() { return window.location.origin; }
+    function ptyIcon(pty) { return {'0':'☀️','1':'🌧️','2':'🌨️','3':'❄️','4':'🌦️','5':'🌧️','6':'🌨️','7':'❄️'}[pty]??'🌡️'; }
+    function ptyDesc(pty) { return {'0':'맑음','1':'비','2':'비/눈','3':'눈','4':'소나기','5':'빗방울','6':'빗방울+눈','7':'눈날림'}[pty]??'-'; }
+    function tempMeta(t) {
+      if (t >= 35) return { label: '폭염경보', color: '#b91c1c' };
+      if (t >= 33) return { label: '폭염주의보', color: '#d97706' };
+      if (t >= 28) return { label: '더움', color: '#15803d' };
+      return { label: '보통', color: '#0369a1' };
+    }
+
+    // ── 기상 데이터 조회 및 메인 화면 카드 업데이트 ────────────────
+    async function selectSite(siteName, siteAddr) {
+      closeModalDirect();
+      
+      const coords = SITE_COORDS[siteName] || { nx: 60, ny: 127 }; // 기본 서울 좌표
+      
+      document.getElementById('dispSiteName').textContent = siteName;
+      document.getElementById('dispSiteAddr').textContent = siteAddr;
+      document.getElementById('dispWeatherIcon').textContent = '⏳';
+      
+      // 로딩 중 표시
+      document.getElementById('valPty').textContent = '...';
+      document.getElementById('valTemp').textContent = '...';
+      document.getElementById('valHumidity').textContent = '...';
+      document.getElementById('valFeels').textContent = '...';
+      document.getElementById('valWind').textContent = '...';
+      document.getElementById('valMeta').textContent = '...';
+
+      try {
+        const base = getApiBase();
+        const res = await fetch(`${base}/api/weather?nx=${coords.nx}&ny=${coords.ny}&type=current`);
+        if (!res.ok) throw new Error('API 오류');
+        
+        const cur = await res.json();
+        const feels = cur.feelsLike ?? cur.temp ?? '-';
+        const meta = tempMeta(Number(feels));
+
+        document.getElementById('dispWeatherIcon').textContent = ptyIcon(cur.pty);
+        document.getElementById('valPty').textContent = ptyDesc(cur.pty);
+        document.getElementById('valTemp').textContent = cur.temp != null ? `${cur.temp}°C` : '-°C';
+        document.getElementById('valHumidity').textContent = cur.humidity != null ? `${cur.humidity}%` : '-%';
+        document.getElementById('valFeels').textContent = `${feels}°C`;
+        document.getElementById('valFeels').style.color = meta.color;
+        document.getElementById('valWind').textContent = cur.wind != null ? `${cur.wind}m/s` : '-m/s';
+        
+        document.getElementById('valMeta').textContent = meta.label;
+        document.getElementById('valMeta').style.color = meta.color;
+
+      } catch (e) {
+        document.getElementById('dispWeatherIcon').textContent = '⚠️';
+        document.getElementById('valMeta').textContent = '오류';
+      }
+    }
+
+    // ── 모달 팝업 컨트롤 ──────────────────────────────────────────
+    function openModal(regionName) {
+      const sites = SITES[regionName] || [];
+      document.getElementById('modal-title').textContent = `${regionName} 권역 현장 목록 (${sites.length}개)`;
+      
+      const modalBody = document.getElementById('modal-body');
+      if (sites.length === 0) {
+        modalBody.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--muted); font-size: 12px;">등록된 현장이 없습니다.</div>`;
+      } else {
+        modalBody.innerHTML = `
+          <ul class="site-list">
+            ${sites.map(s => `
+              <li class="site-item" onclick="selectSite('${s.name}', '${s.addr}')">
+                <div class="site-item-name">${s.name}</div>
+                <div class="site-item-addr">${s.addr}</div>
+              </li>
+            `).join('')}
+          </ul>
+        `;
+      }
+      document.getElementById('modal').classList.add('open');
+    }
+
+    function closeModal(e) { if (e.target === document.getElementById('modal')) closeModalDirect(); }
+    function closeModalDirect() { document.getElementById('modal').classList.remove('open'); }
+
+    // ── 현장 검색 기능 ───────────────────────────────────────────
+    function filterSites() {
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      if (!query) return;
+
+      const matched = [];
+      Object.keys(SITES).forEach(region => {
+        SITES[region].forEach(s => {
+          if (s.name.toLowerCase().includes(query)) matched.push(s);
+        });
+      });
+
+      if (matched.length > 0) {
+        document.getElementById('modal-title').textContent = `검색 결과 (${matched.length}개)`;
+        document.getElementById('modal-body').innerHTML = `
+          <ul class="site-list">
+            ${matched.map(s => `
+              <li class="site-item" onclick="selectSite('${s.name}', '${s.addr}')">
+                <div class="site-item-name">${s.name}</div>
+                <div class="site-item-addr">${s.addr}</div>
+              </li>
+            `).join('')}
+          </ul>
+        `;
+        document.getElementById('modal').classList.add('open');
+      }
+    }
+
+    // ── 지도 간단 시각화 (임시 D3 지도 placeholder) ─────────────────────
+    function initMap() {
+      document.getElementById('map-container').innerHTML = `
+        <div style="text-align:center; padding: 20px;">
+          <div style="font-size:28px; margin-bottom:8px;">🗺️</div>
+          <div style="font-size:12px; color:var(--muted); font-weight:bold;">대한민국 스마트 기상 지도</div>
+          <div style="font-size:10px; color:#94a3b8; margin-top:4px;">우측 지역 버튼을 선택하세요</div>
+        </div>
+      `;
+    }
+
+    window.onload = initMap;
+  </script>
 </body>
 </html>
