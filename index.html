@@ -453,20 +453,29 @@
 
       try {
         const base = getApiBase();
+        // Vercel Serverless Function 호출
         const res = await fetch(`${base}/api/weather?nx=${coords.nx}&ny=${coords.ny}&type=current`);
         if (!res.ok) throw new Error('API 오류');
         
         const cur = await res.json();
-        const feels = cur.feelsLike ?? cur.temp ?? '-';
-        const meta = tempMeta(Number(feels));
+        
+        // 데이터 파싱 (null 예외 처리)
+        const temp = cur.temp != null ? cur.temp : '-';
+        const feels = cur.feelsLike != null ? cur.feelsLike : temp;
+        const humidity = cur.humidity != null ? cur.humidity : '-';
+        const wind = cur.wind != null ? cur.wind : '-';
+        const pty = cur.pty ?? '0';
 
-        document.getElementById('dispWeatherIcon').textContent = ptyIcon(cur.pty);
-        document.getElementById('valPty').textContent = ptyDesc(cur.pty);
-        document.getElementById('valTemp').textContent = cur.temp != null ? `${cur.temp}°C` : '-°C';
-        document.getElementById('valHumidity').textContent = cur.humidity != null ? `${cur.humidity}%` : '-%';
-        document.getElementById('valFeels').textContent = `${feels}°C`;
+        const meta = tempMeta(feels !== '-' ? Number(feels) : 0);
+
+        // 화면 요소에 데이터 입력
+        document.getElementById('dispWeatherIcon').textContent = ptyIcon(pty);
+        document.getElementById('valPty').textContent = ptyDesc(pty);
+        document.getElementById('valTemp').textContent = temp !== '-' ? `${temp}°C` : '-°C';
+        document.getElementById('valHumidity').textContent = humidity !== '-' ? `${humidity}%` : '-%';
+        document.getElementById('valFeels').textContent = feels !== '-' ? `${feels}°C` : '-°C';
         document.getElementById('valFeels').style.color = meta.color;
-        document.getElementById('valWind').textContent = cur.wind != null ? `${cur.wind}m/s` : '-m/s';
+        document.getElementById('valWind').textContent = wind !== '-' ? `${wind}m/s` : '-m/s';
         
         document.getElementById('valMeta').textContent = meta.label;
         document.getElementById('valMeta').style.color = meta.color;
