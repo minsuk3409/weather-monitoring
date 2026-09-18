@@ -80,6 +80,16 @@
     @media (max-width: 900px) {
       .dashboard { grid-template-columns: 1fr; }
       .region-buttons { grid-template-columns: repeat(4, 1fr); }
+   /* 특보 리스트 높이 제한 (최대 8개 표시) */
+   .alert-list { display: flex; flex-direction: column; gap: 6px; max-height: 310px; overflow-y: auto; }
+
+   /* 특보 없음 상태 디자인 */
+    .no-alert-box {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; min-height: 180px; background: #f8fafc; border: 1px dashed #cbd5e1;
+    border-radius: 4px; color: #64748b; font-size: 13px; font-weight: 500; text-align: center; gap: 8px;
+}
+.no-alert-icon { font-size: 28px; }   
     }
   </style>
 </head>
@@ -154,28 +164,9 @@
             <div style="font-size: 11px; color: var(--muted);">전체 현장</div>
             <div class="count">112개</div>
           </div>
-          <div class="alert-list">
-            <div class="alert-row">
-              <div class="alert-label" style="color: #b91c1c;">폭염경보</div>
-              <div class="alert-count">00개</div>
-              <div class="alert-regions">서울 1 경기 2 충북 3 경북 2 경남 2</div>
-            </div>
-            <div class="alert-row">
-              <div class="alert-label" style="color: #d97706;">폭염주의보</div>
-              <div class="alert-count">00개</div>
-              <div class="alert-regions">서울 1 경기 2 충북 3 경북 2 경남 2</div>
-            </div>
-            <div class="alert-row">
-              <div class="alert-label">호우주의보</div>
-              <div class="alert-count">10개</div>
-              <div class="alert-regions">서울 1 경기 2 충북 3 경북 2 경남 2</div>
-            </div>
-            <div class="alert-row">
-              <div class="alert-label">강풍주의보</div>
-              <div class="alert-count">10개</div>
-              <div class="alert-regions">서울 1 경기 2 충북 3 경북 2 경남 2</div>
-            </div>
-          </div>
+    <div class="alert-list" id="alertListContainer">
+      <!-- 자바스크립트로 동적 생성됩니다 -->
+    </div>
         </div>
 
         <!-- 16개 지역 선택 버튼 -->
@@ -234,6 +225,91 @@
   </div>
 
   <script>
+
+    // 우선순위 정의 (이미지 스펙 반영)
+const TYPE_PRIORITY = { '폭염': 1, '한파': 1, '호우': 2, '강풍': 3, '풍랑': 4, '태풍': 5, '대설': 6, '건조': 7, '황사': 8 };
+const LEVEL_PRIORITY = { '중대경보': 1, '경보': 2, '주의보': 3 };
+
+// 전체 특보 연동 및 렌더링 함수
+async function updateAllAlerts() {
+  const container = document.getElementById('alertListContainer');
+  container.innerHTML = `<div style="text-align:center; padding: 20px; color: var(--muted); font-size:12px;">현장 특보 확인 중...</div>`;
+
+  const regionAlerts = {};
+
+  // 1. 각 지역별 특보 수집
+  await Promise.all(Object.keys(SITES).map(async (region) => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/alert?region=${encodeURIComponent(region)}`);
+      if (res.ok) {
+        const data = await res.json();
+        regionAlerts[region] = data.alerts || [];
+      }
+    } catch { regionAlerts[region] = []; }
+  }));
+
+  // 2. 특보별 발효 지역 및 건수 집계
+  const aggregated = {};
+
+  Object.keys(regionAlerts).forEach(region => {
+    const alerts = regionAlerts[region];
+    const siteCount = (SITES[region] || []).length;
+    if (siteCount === 0) return;
+
+    alerts.forEach(al => {
+      const key = `${al.type}${al.level}`;
+      if (!aggregated[key]) {
+        aggregated[key] = { type: al.type, level: al.level, count: 0, regions: {} };
+      }
+      aggregated[key].count += siteCount;
+      aggregated[key].regions[region] = (aggregated[key].regions[region] || 0) + siteCount;
+    });
+  });
+
+  const alertKeys = Object.keys(aggregated);
+
+  // 3. 특보가 없을 때 문구 출력
+  if (alertKeys.length === 0) {
+    container.innerHTML = `
+      <div class="no-alert-box">
+        <div class="no-alert-icon">☀️</div>
+        <div>금일 당사 현장에 발효된 특보가 없습니다</div>
+      </div>
+    `;
+    return;
+  }
+
+  // 4. 우선순위 정렬 (종류 -> 등급)
+  const sortedAlerts = alertKeys.map(k => aggregated[k]).sort((a, b) => {
+    const typeDiff = (TYPE_PRIORITY[a.type] || 99) - (TYPE_PRIORITY[b.type] || 99);
+    if (typeDiff !== 0) return typeDiff;
+    return (LEVEL_PRIORITY[a.level] || 99) - (LEVEL_PRIORITY[b.level] || 99);
+  });
+
+  // 5. 최대 8개 까지만 슬라이싱하여 렌더링
+  const displayAlerts = sortedAlerts.slice(0, 8);
+
+  container.innerHTML = displayAlerts.map(al => {
+    const regionTxt = Object.keys(al.regions).map(r => `${r} ${al.regions[r]}`).join(' ');
+    const isWarning = al.level.includes('경보');
+    const colorStyle = isWarning ? 'color: #b91c1c;' : 'color: #d97706;';
+
+    return `
+      <div class="alert-row">
+        <div class="alert-label" style="${colorStyle}">${al.type}${al.level}</div>
+        <div class="alert-count">${String(al.count).padStart(2, '0')}개</div>
+        <div class="alert-regions">${regionTxt}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// 페이지 로드 시 실행
+window.addEventListener('load', () => {
+  if (typeof initMap === 'function') initMap();
+  updateAllAlerts();
+});
+    
     // ── 현장별 좌표 & 목록 데이터 ──────────────────────────────────
     const SITE_COORDS = {
       "고척푸르지오힐스테이트": { nx:58, ny:125 }, "노량진5구역재개발": { nx:59, ny:126 }, "리버센트푸르지오위브": { nx:59, ny:126 },
