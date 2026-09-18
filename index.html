@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="icon" href="favicon.png" type="image/png">
+  <title>권역별 체감온도</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f5f5f3; --surface: #fff; --border: rgba(0,0,0,0.1);
+      --text: #1a1a18; --muted: #6b6b68; --hint: #9b9b97;
+      --radius: 14px; --radius-sm: 8px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#1a1a18; --surface:#252523; --border:rgba(255,255,255,0.1); --text:#f0efe8; --muted:#9b9b97; --hint:#6b6b68; }
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', sans-serif; background:var(--bg); color:var(--text); min-height:100vh; padding:2rem 1rem 4rem; }
+    .container { max-width:980px; margin:0 auto; }
+    header { display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:1.75rem; }
+    header h1 { font-size:22px; font-weight:600; }
+    header p  { font-size:13px; color:var(--muted); margin-top:4px; }
+    .btn { font-size:13px; padding:8px 16px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; display:flex; align-items:center; gap:6px; transition:opacity .15s; }
+    .btn:hover { opacity:.7; } .btn:disabled { opacity:.4; cursor:not-allowed; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:14px; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1.25rem; transition:transform .15s, box-shadow .15s; cursor:pointer; position:relative; }
+    .card:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(0,0,0,0.08); }
+    .card-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+    .region { font-size:15px; font-weight:600; }
+    .city   { font-size:12px; color:var(--muted); margin-top:2px; }
+    .weather-icon { font-size:26px; }
+    .divider { height:1px; background:var(--border); margin:12px 0; }
+    .temp-now-label { font-size:11px; color:var(--hint); margin-bottom:3px; }
+    .temp-now  { font-size:36px; font-weight:700; line-height:1; }
+    .temp-actual { font-size:12px; color:var(--muted); margin-top:4px; }
+    .temp-range { display:flex; gap:12px; margin-top:12px; }
+    .range-item { flex:1; }
+    .range-label { font-size:10px; color:var(--hint); margin-bottom:2px; }
+    .range-val   { font-size:17px; font-weight:600; }
+    .meta { display:flex; gap:10px; margin-top:12px; font-size:12px; color:var(--muted); }
+    .badge { display:inline-block; font-size:11px; font-weight:500; padding:3px 10px; border-radius:20px; margin-top:12px; }
+    .site-count { font-size:11px; color:var(--hint); margin-top:8px; }
+    .alert-badge { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; margin-top:8px; }
+    .alert-watch  { background:#FFF3CD; color:#856404; border:1px solid #FFEAA7; }
+    .alert-warn   { background:#FFEAEA; color:#A32D2D; border:1px solid #FFB3B3; }
+    .alert-none   { display:none; }
+    .alert-loading { background:var(--border); color:var(--hint); border:none; }
+    .skeleton { background:var(--border); border-radius:var(--radius); height:230px; animation:pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .error-box { grid-column:1/-1; padding:3rem; text-align:center; color:var(--muted); font-size:15px; }
+    footer { margin-top:2.5rem; text-align:center; font-size:12px; color:var(--hint); line-height:1.8; }
+    footer a { color:var(--muted); }
+    #api-banner { background:#FAEEDA; border:1px solid #EF9F27; border-radius:var(--radius-sm); padding:12px 16px; margin-bottom:1.5rem; font-size:13px; color:#633806; display:flex; align-items:center; gap:10px; flex-wrap:wrap; display: none !important; }
+    #api-banner input { flex:1; min-width:200px; font-size:13px; padding:6px 10px; border-radius:6px; border:1px solid #EF9F27; background:#fff; color:#1a1a18; }
+    #api-banner button { white-space:nowrap; font-size:13px; padding:6px 14px; border-radius:6px; border:1px solid #BA7517; background:#BA7517; color:#fff; cursor:pointer; }
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:100; display:flex; align-items:center; justify-content:center; padding:1rem; opacity:0; pointer-events:none; transition:opacity .2s; }
+    .modal-overlay.open { opacity:1; pointer-events:auto; }
+    .modal { background:var(--surface); border-radius:var(--radius); width:100%; max-width:560px; max-height:85vh; display:flex; flex-direction:column; transform:translateY(16px); transition:transform .2s; box-shadow:0 20px 60px rgba(0,0,0,0.2); }
+    .modal-overlay.open .modal { transform:translateY(0); }
+    .modal-header { padding:1.25rem 1.5rem 1rem; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+    .modal-header h2 { font-size:17px; font-weight:600; }
+    .modal-close { background:none; border:none; font-size:20px; color:var(--muted); cursor:pointer; line-height:1; padding:4px; }
+    .modal-close:hover { color:var(--text); }
+    .modal-body { overflow-y:auto; flex:1; }
+    .site-list { list-style:none; }
+    .site-item { padding:14px 1.5rem; border-bottom:1px solid var(--border); cursor:pointer; transition:background .12s; }
+    .site-item:last-child { border-bottom:none; }
+    .site-item:hover { background:rgba(0,0,0,0.03); }
+    @media (prefers-color-scheme:dark) { .site-item:hover { background:rgba(255,255,255,0.05); } }
+    .site-name { font-size:14px; font-weight:500; }
+    .site-addr { font-size:12px; color:var(--muted); margin-top:3px; }
+    .site-weather { padding:1.5rem; display:none; flex-direction:column; gap:12px; }
+    .site-weather.visible { display:flex; }
+    .back-btn { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); background:none; border:none; cursor:pointer; padding:0; margin-bottom:4px; }
+    .back-btn:hover { color:var(--text); }
+    .sw-name { font-size:18px; font-weight:700; }
+    .sw-addr { font-size:12px; color:var(--muted); margin-top:2px; }
+    .sw-big  { font-size:52px; font-weight:800; line-height:1; margin-top:12px; }
+    .sw-sub  { font-size:13px; color:var(--muted); margin-top:6px; }
+    .sw-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+    .sw-cell { background:var(--bg); border-radius:10px; padding:12px 14px; }
+    .sw-cell-label { font-size:11px; color:var(--hint); margin-bottom:4px; }
+    .sw-cell-val   { font-size:22px; font-weight:700; }
+    .sw-loading { text-align:center; padding:2rem; color:var(--muted); font-size:14px; }
+    .sw-error   { text-align:center; padding:2rem; color:#A32D2D; font-size:14px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div id="api-banner">
+    ⚙️ Vercel API URL 입력:
+    <input type="text" id="api-url-input" placeholder="https://your-project.vercel.app" value=""/>
+    <button onclick="saveApiUrl()">저장</button>
+  </div>
+  <header>
+    <div>
+      <h1>🌡️ 권역별 체감온도</h1>
+      <p id="updated">불러오는 중...</p>
+    </div>
+    <button class="btn" id="refreshBtn" onclick="loadAll()">↻ 새로고침</button>
+  </header>
+<div class="page-layout">
+
+  <!-- 우측: 권역 카드 -->
+  <div class="grid" id="grid"></div>
+
+</div>
+  <footer>
+    날씨 데이터: <a href="https://www.kma.go.kr" target="_blank">기상청 단기예보 API</a> ·
+    폭염특보: <a href="https://www.kma.go.kr" target="_blank">기상청 특보 API</a> ·
+    API 프록시: <a href="https://vercel.com" target="_blank">Vercel 서버리스</a><br>
+    체감온도 = 기온·풍속·습도 기반 계산 (기상청 공식 적용) · 현장별 기상청 격자 좌표 적용<br>
+    카드를 클릭하면 권역 내 현장 목록을 확인할 수 있습니다
+  </footer>
+</div>
+
+<div class="modal-overlay" id="modal" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">현장 목록</h2>
+      <button class="modal-close" onclick="closeModalDirect()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+// ── 권역 정의 ─────────────────────────────────────────────────────────
+const REGIONS = [
+  { name:'서울',  city:'서울',  nx:60, ny:127 },
+  { name:'경기',  city:'수원',  nx:60, ny:121 },
+  { name:'인천',  city:'인천',  nx:55, ny:124 },
+  { name:'충남',  city:'대전',  nx:67, ny:100 },
+  { name:'충북',  city:'청주',  nx:69, ny:107 },
+  { name:'전북',  city:'전주',  nx:63, ny:89  },
+  { name:'전남',  city:'광주',  nx:58, ny:74  },
+  { name:'강원',  city:'춘천',  nx:73, ny:134 },
+  { name:'경북',  city:'대구',  nx:89, ny:90  },
+  { name:'경남',  city:'부산',  nx:98, ny:76  },
+  { name:'제주',  city:'제주',  nx:52, ny:38  },
+];
+
+// ── 현장별 기상청 격자 좌표 (주소 기반 변환) ──────────────────────────
+const SITE_COORDS = {
+  "고척푸르지오힐스테이트": { nx:58, ny:125 },
+  "노량진5구역재개발": { nx:59, ny:126 },
+  "리버센트푸르지오위브": { nx:59, ny:126 },
+  "마포푸르지오어반피스": { nx:59, ny:126 },
+  "세운633오피스": { nx:60, ny:127 },
+  "수표구역오피스빌딩": { nx:60, ny:127 },
+  "신림2구역주택재개발정비": { nx:59, ny:125 },
+  "써밋더힐": { nx:60, ny:125 },
+  "써밋클라비온": { nx:59, ny:125 },
+  "장위푸르지마크원": { nx:61, ny:128 },
+  "푸르지오라디우스파크": { nx:61, ny:128 },
+  "도림천빗물배수터널": { nx:60, ny:126 },
+  "동부간선도로지하화(민자)1공구": { nx:61, ny:127 },
+  "동부간선도로지하화(민자)2공구": { nx:61, ny:127 },
+  "동부간선도로지하화(민자)4공구": { nx:61, ny:127 },
+  "동부간선도로지하화(영동대로)": { nx:61, ny:125 },
+  "서울도시철도9호선연장1공구": { nx:63, ny:126 },
+  "교산푸르지오더퍼스트": { nx:64, ny:126 },
+  "남양주왕숙A-3BL민간참여공공주택": { nx:64, ny:130 },
+  "양주역푸르지오센터파크": { nx:61, ny:132 },
+  "왕숙푸르지오더퍼스트1단지": { nx:64, ny:130 },
+  "왕숙푸르지오더퍼스트2단지": { nx:64, ny:130 },
+  "의정부푸르지오클라시엘": { nx:61, ny:130 },
+  "탑석푸르지오파크7": { nx:61, ny:130 },
+  "양평이천고속도로1공구": { nx:67, ny:122 },
+  "GTX-B5공구": { nx:65, ny:129 },
+  "김포한강시네폴리스주상복합신축사업": { nx:55, ny:128 },
+  "송내역푸르지오센트비엔": { nx:60, ny:125 },
+  "풍무역푸르지오더마크": { nx:55, ny:128 },
+  "GTX-B2공구": { nx:60, ny:125 },
+  "금정역푸르지오그랑블": { nx:59, ny:122 },
+  "과천5단지재건축": { nx:60, ny:124 },
+  "동탄포레파크자연앤푸르지오": { nx:62, ny:118 },
+  "망포역푸르지오르마크": { nx:61, ny:120 },
+  "브레인시티푸르지오": { nx:61, ny:115 },
+  "산성역헤리스톤": { nx:63, ny:124 },
+  "식사푸르지오파크센트": { nx:56, ny:129 },
+  "수원영통1구역주택재개발정비": { nx:61, ny:120 },
+  "용인푸르지오원클러스터파크": { nx:65, ny:120 },
+  "용인푸르지오원클러스터1단지": { nx:64, ny:119 },
+  "용인푸르지오원클러스터2,3단지": { nx:64, ny:119 },
+  "용인푸르지오클루센트": { nx:63, ny:120 },
+  "청북하늘빛호수공원조성": { nx:58, ny:115 },
+  "평택고덕A56민간참여공공주택": { nx:62, ny:114 },
+  "평택미군독신숙소(4단계)": { nx:61, ny:114 },
+  "평택푸르지오센터파인": { nx:60, ny:114 },
+  "G-TOWN 개발사업신축공사": { nx:60, ny:124 },
+  "과천지식정보타운지구조성현장(토목)": { nx:60, ny:124 },
+  "수원당수소음저감시설": { nx:60, ny:120 },
+  "수원대유평지구기반시설": { nx:60, ny:121 },
+  "오산대미시설": { nx:61, ny:115 },
+  "용인은화삼지구기반시설": { nx:64, ny:119 },
+  "평택오송철도1공구": { nx:62, ny:114 },
+  "화성화옹농업단지5공구": { nx:56, ny:118 },
+  "풍무역세권부지조성": { nx:55, ny:128 },
+  "검단신도시푸르지오더파크": { nx:55, ny:127 },
+  "용현학익1-6BL공공지원민간임대리츠": { nx:55, ny:124 },
+  "운서역푸르지오더스카이2차": { nx:51, ny:125 },
+  "인천계양A-10BL아파트건설공사4공구": { nx:56, ny:126 },
+  "인하대역푸르지오에듀포레": { nx:55, ny:124 },
+  "청라피크원푸르지오": { nx:54, ny:126 },
+  "푸르지오스타셀라49": { nx:54, ny:126 },
+  "검단2일반산업단지": { nx:54, ny:127 },
+  "송도11-1공구4구역기반시설": { nx:54, ny:123 },
+  "수도권3매립장": { nx:53, ny:127 },
+  "GTX-B1공구": { nx:56, ny:124 },
+  "관저푸르지오센트럴파크": { nx:67, ny:100 },
+  "그랑르피에드": { nx:67, ny:100 },
+  "논산푸르지오더퍼스트": { nx:62, ny:97 },
+  "도안푸르지오디아델1단지": { nx:66, ny:101 },
+  "도안푸르지오디아델2단지": { nx:66, ny:101 },
+  "업성푸르지오레이크시티1단지": { nx:63, ny:111 },
+  "업성푸르지오레이크시티2단지": { nx:63, ny:111 },
+  "탕정푸르지오리버파크": { nx:62, ny:110 },
+  "탕정푸르지오센터파크": { nx:62, ny:110 },
+  "당진기지항만": { nx:54, ny:112 },
+  "세종안성고속도로6공구": { nx:64, ny:111 },
+  "천안환경클러스터": { nx:65, ny:109 },
+  "신영지웰푸르지오테크노폴리스센트럴": { nx:68, ny:108 },
+  "청주센텀푸르지오자이": { nx:69, ny:107 },
+  "청주푸르지오씨엘리체": { nx:68, ny:106 },
+  "남청주현도산업단지": { nx:69, ny:105 },
+  "청주첨단산업단지": { nx:68, ny:107 },
+  "군산대미전기시설": { nx:55, ny:91 },
+  "장성파인데이터센터": { nx:57, ny:77 },
+  "강진광주고속도로1공구": { nx:57, ny:63 },
+  "광주대미급유시설공사": { nx:57, ny:74 },
+  "압해화원도로2공구": { nx:49, ny:68 },
+  "진도초평항": { nx:47, ny:59 },
+  "양양생활형숙박시설": { nx:88, ny:138 },
+  "원주푸르지오더센트럴": { nx:76, ny:122 },
+  "강릉비행장": { nx:93, ny:132 },
+  "동해신항기타광석부두": { nx:97, ny:127 },
+  "동해항취배수로이설": { nx:97, ny:127 },
+  "홍천양수발전소1,2호기": { nx:75, ny:130 },
+  "운문댐안전성강화": { nx:95, ny:86 },
+  "가야1구역재개발": { nx:97, ny:75 },
+  "거제푸르지오마린피스": { nx:90, ny:69 },
+  "괴정3구역재건축정비": { nx:96, ny:74 },
+  "김해삼계푸르지오센트럴파크": { nx:95, ny:77 },
+  "동래푸르지오에듀포레": { nx:98, ny:76 },
+  "문현푸르지오트레시엘": { nx:98, ny:75 },
+  "블랑써밋74": { nx:97, ny:75 },
+  "서면써밋더뉴": { nx:98, ny:75 },
+  "써밋리미티드남천": { nx:98, ny:75 },
+  "에코델타시티푸르지오트레파크": { nx:94, ny:75 },
+  "용호2구역재개발": { nx:98, ny:75 },
+  "창원상남1구역재건축": { nx:91, ny:77 },
+  "창원푸르지오파크베뉴": { nx:91, ny:76 },
+  "고리원전항만보강": { nx:102, ny:79 },
+  "진해신항남측방파호안1공구": { nx:91, ny:74 },
+  "진해신항투기장호안2공구": { nx:91, ny:74 },
+  "수출용신형연구용원자로 건설공사PJ": { nx:102, ny:79 },
+  "울산 북항터미널 3단계건설공사PJ": { nx:103, ny:82 },
+  "제주덕천": { nx:58, ny:39 },
+};
+
+// ── 현장 목록 ─────────────────────────────────────────────────────────
+const SITES = {
+  '서울': [
+    { name:'고척푸르지오힐스테이트',        addr:'서울 구로구 고척동 172-141' },
+    { name:'노량진5구역재개발',             addr:'서울 동작구 노량진동 274-5' },
+    { name:'리버센트푸르지오위브',          addr:'서울 영등포구 영등포동 5가 32-8' },
+    { name:'마포푸르지오어반피스',          addr:'서울 마포구 아현동 613-1' },
+    { name:'세운633오피스',                addr:'서울 중구 마른내로 71' },
+    { name:'수표구역오피스빌딩',            addr:'서울 중구 입정동 237' },
+    { name:'신림2구역주택재개발정비',       addr:'서울 관악구 신림동 324-25번지 일원' },
+    { name:'써밋더힐',                     addr:'서울 동작구 현충로14길 15' },
+    { name:'써밋클라비온',                 addr:'서울 영등포구 신길동 3950' },
+    { name:'장위푸르지마크원',             addr:'서울 성북구 돌곶이로 22길 47' },
+    { name:'푸르지오라디우스파크',          addr:'서울 성북구 장위동 25-55번지 일원' },
+    { name:'도림천빗물배수터널',            addr:'서울 용산구 한강대로 256' },
+    { name:'동부간선도로지하화(민자)1공구', addr:'서울 성동구 송정동 73-37' },
+    { name:'동부간선도로지하화(민자)2공구', addr:'서울 성동구 용답동 250-8' },
+    { name:'동부간선도로지하화(민자)4공구', addr:'서울 성동구 용답동 250-8' },
+    { name:'동부간선도로지하화(영동대로)',   addr:'서울 강남구 역삼로107길 20-41' },
+    { name:'서울도시철도9호선연장1공구',    addr:'서울 강동구 천중로 213' },
+  ],
+  '경기': [
+    { name:'교산푸르지오더퍼스트',         addr:'경기도 하남시 천현로 34-1' },
+    { name:'남양주왕숙A-3BL민간참여공공주택', addr:'경기도 남양주시 진접읍 연평리 767' },
+    { name:'양주역푸르지오센터파크',        addr:'경기도 양주시 남방동 산14-3' },
+    { name:'왕숙푸르지오더퍼스트1단지',    addr:'경기도 남양주시 진접읍 연평리 778' },
+    { name:'왕숙푸르지오더퍼스트2단지',    addr:'경기도 남양주시 진접읍 양진로 725' },
+    { name:'의정부푸르지오클라시엘',       addr:'경기도 의정부시 금오동 369-5' },
+    { name:'탑석푸르지오파크7',            addr:'경기도 의정부시 용현동 267-8' },
+    { name:'양평이천고속도로1공구',        addr:'경기도 광주시 곤지암읍 신촌리 233' },
+    { name:'GTX-B5공구',                  addr:'경기도 남양주시 화도읍 경춘로 2155' },
+    { name:'김포한강시네폴리스주상복합신축사업', addr:'경기 김포시 고촌읍 향산리 588-25' },
+    { name:'송내역푸르지오센트비엔',       addr:'경기도 부천시 송내동 339' },
+    { name:'풍무역푸르지오더마크',         addr:'경기 김포시 사우로 118' },
+    { name:'GTX-B2공구',                  addr:'경기도 부천시 원미구 길주로 249' },
+    { name:'금정역푸르지오그랑블',         addr:'경기도 군포시 금정동 148-3' },
+    { name:'과천5단지재건축',             addr:'경기도 과천시 별양로 6번지' },
+    { name:'동탄포레파크자연앤푸르지오',   addr:'경기도 화성시 산척동 748' },
+    { name:'망포역푸르지오르마크',         addr:'경기도 수원시 영통구 덕영대로 1556번길 16' },
+    { name:'브레인시티푸르지오',           addr:'경기도 평택시 장안동 171' },
+    { name:'산성역헤리스톤',              addr:'경기도 성남시 수정구 수정로 342번길 15-10 일원' },
+    { name:'식사푸르지오파크센트',          addr:'경기도 고양시 일산서구 경의로 790' },    
+    { name:'수원영통1구역주택재개발정비',  addr:'경기도 수원시 영통구 매탄동 173-50' },
+    { name:'용인푸르지오원클러스터파크',   addr:'경기도 용인시 처인구 양지면 양지리 194번지 일원' },
+    { name:'용인푸르지오원클러스터1단지',  addr:'경기도 용인시 처인구 남동 127-1' },
+    { name:'용인푸르지오원클러스터2,3단지', addr:'경기도 용인시 처인구 백옥대로 958' },
+    { name:'용인푸르지오클루센트',         addr:'경기도 용인시 처인구 역북동 811' },
+    { name:'청북하늘빛호수공원조성',       addr:'경기도 평택시 청북읍 옥길리 1137' },
+    { name:'평택고덕A56민간참여공공주택',  addr:'경기도 평택시 고덕동 2690-1' },
+    { name:'평택미군독신숙소(4단계)',      addr:'경기도 평택시 팽성읍 도두리 120-1' },
+    { name:'평택푸르지오센터파인',         addr:'경기도 평택시 현덕면 화양리 790-4' },
+    { name:'G-TOWN 개발사업신축공사',      addr:'경기도 과천시 과천대로7길 33' },
+    { name:'과천지식정보타운지구조성현장(토목)', addr:'경기도 과천시 샛말로 33 (갈현동)' },
+    { name:'수원당수소음저감시설',         addr:'경기도 수원시 권선구 당수로 112' },
+    { name:'수원대유평지구기반시설',       addr:'경기도 수원시 장안구 정자동 900-1' },
+    { name:'오산대미시설',                addr:'경기도 평택시 서탄면 고덕북로 114' },
+    { name:'용인은화삼지구기반시설',       addr:'경기도 용인시 처인구 남동 388-3' },
+    { name:'평택오송철도1공구',           addr:'경기도 평택시 팽성읍 석근길 67' },
+    { name:'화성화옹농업단지5공구',       addr:'경기도 화성시 남양읍 장덕서길 108 (장덕리)' },
+    { name:'풍무역세권부지조성',          addr:'경기도 김포시 김포대로 703' },
+  ],
+  '인천': [
+    { name:'검단신도시푸르지오더파크',     addr:'인천 서구 마전동 산119-9' },
+    { name:'용현학익1-6BL공공지원민간임대리츠', addr:'인천 미추홀구 학익동 595-30' },
+    { name:'운서역푸르지오더스카이2차',    addr:'인천 중구 영종대로278번길 34' },
+    { name:'인천계양A-10BL아파트건설공사4공구', addr:'인천 계양구 동양동 448-1 일원' },
+    { name:'인하대역푸르지오에듀포레',     addr:'인천 미추홀구 학익동 320번지 일원' },
+    { name:'청라피크원푸르지오',          addr:'인천 서구 청라동 86-6' },
+    { name:'푸르지오스타셀라49',          addr:'인천 서구 미래로11' },
+    { name:'검단2일반산업단지',           addr:'인천 서구 완정로8' },
+    { name:'송도11-1공구4구역기반시설',    addr:'인천 연수구 송도동 474-1' },
+    { name:'수도권3매립장',              addr:'인천 서구 거월로 61 (백석동)' },
+    { name:'GTX-B1공구',                addr:'인천 남동구 남촌로 139' },
+  ],
+  '충남': [
+    { name:'관저푸르지오센트럴파크',       addr:'대전 서구 계백로 1106' },
+    { name:'그랑르피에드',               addr:'대전 서구 둔산동 1380-2' },
+    { name:'논산푸르지오더퍼스트',        addr:'충청남도 논산시 연무읍 안심리 26-1' },
+    { name:'도안푸르지오디아델1단지',      addr:'대전 유성구 용계동 70' },
+    { name:'도안푸르지오디아델2단지',      addr:'대전 유성구 용계동 73-48' },
+    { name:'업성푸르지오레이크시티1단지',  addr:'충청남도 천안시 서북구 업성동 362' },
+    { name:'업성푸르지오레이크시티2단지',  addr:'충청남도 천안시 서북구 업성동 370-1' },
+    { name:'탕정푸르지오리버파크',        addr:'충청남도 아산시 탕정면 갈산리 609-7' },
+    { name:'탕정푸르지오센터파크',        addr:'충청남도 아산시 탕정면 갈산리 625-8' },
+    { name:'당진기지항만',              addr:'충청남도 당진시 송산면 동곡리3-1' },
+    { name:'세종안성고속도로6공구',       addr:'충청남도 천안시 동남구 북면 상동리 212-3' },
+    { name:'천안환경클러스터',           addr:'충청남도 천안시 동남구 성남면 대화리 377' },
+  ],
+  '충북': [
+    { name:'신영지웰푸르지오테크노폴리스센트럴', addr:'충청북도 청주시 흥덕구 송절동 산 4-2' },
+    { name:'청주센텀푸르지오자이',        addr:'충청북도 청주시 서원구 사직동 241-1' },
+    { name:'청주푸르지오씨엘리체',        addr:'충청북도 청주시 서원구 미평동' },
+    { name:'남청주현도산업단지',          addr:'충청북도 청주시 서원구 현도면 달계노산로 11' },
+    { name:'청주첨단산업단지',           addr:'충청북도 청주시 흥덕구 직지대로49번길 45 (서촌동)' },
+  ],
+  '전북': [
+    { name:'군산대미전기시설',            addr:'전라북도 군산시 옥서면' },
+  ],
+  '전남': [
+    { name:'장성파인데이터센터',          addr:'전라남도 장성군 남면 삼태리 412-17' },
+    { name:'강진광주고속도로1공구',       addr:'전라남도 강진군 작천면 갈동로 75' },
+    { name:'광주대미급유시설공사',        addr:'광주 광산구 상무대로 420-25' },
+    { name:'압해화원도로2공구',           addr:'전라남도 신안군 압해읍 장감길 148 (장감리 498)' },
+    { name:'진도초평항',                addr:'전라남도 진도군 의신면 초사리 390-20' },
+  ],
+  '강원': [
+    { name:'양양생활형숙박시설',          addr:'강원도 양양군 강현면 전진리 7-3' },
+    { name:'원주푸르지오더센트럴',        addr:'강원도 원주시 원동 274-40' },
+    { name:'강릉비행장',                addr:'강원도 강릉시 남항진동' },
+    { name:'동해신항기타광석부두',        addr:'강원도 동해시 구호동 215' },
+    { name:'동해항취배수로이설',          addr:'강원도 동해시 단봉동 97-5' },
+    { name:'홍천양수발전소1,2호기',      addr:'강원도 홍천군 홍천읍 갈마곡리 45-4' },
+  ],
+  '경북': [
+    { name:'운문댐안전성강화',            addr:'경상북도 청도군 운문면 운문로 2490' },
+  ],
+  '경남': [
+    { name:'가야1구역재개발',            addr:'부산 부산진구 가야동 408' },
+    { name:'거제푸르지오마린피스',        addr:'경남 거제시 장평동 1' },
+    { name:'괴정3구역재건축정비',         addr:'부산 사하구 낙동대로 249번길 48' },
+    { name:'김해삼계푸르지오센트럴파크',  addr:'경상남도 김해시 삼계동 1027-3' },
+    { name:'동래푸르지오에듀포레',        addr:'부산 동래구 안락로 101번길16' },
+    { name:'문현푸르지오트레시엘',        addr:'부산 남구 문현동 산23 일원' },
+    { name:'블랑써밋74',                addr:'부산 동구 범일동 330-226' },
+    { name:'서면써밋더뉴',              addr:'부산 부산진구 전포동 668-1' },
+    { name:'써밋리미티드남천',           addr:'부산 수영구 남천동 545-2' },
+    { name:'에코델타시티푸르지오트레파크', addr:'부산 강서구 강동동 4995-8' },
+    { name:'용호2구역재개발',            addr:'부산 남구 용호동 434 일원' },
+    { name:'창원상남1구역재건축',         addr:'경상남도 창원시 성산구 상남로 48' },
+    { name:'창원푸르지오파크베뉴',        addr:'경상남도 창원시 성산구 가음동 24-1' },
+    { name:'고리원전항만보강',            addr:'부산 기장군 장안읍 길친길 96-1' },
+    { name:'진해신항남측방파호안1공구',   addr:'경상남도 창원시 진해구 신항4로 58' },
+    { name:'진해신항투기장호안2공구',     addr:'경상남도 창원시 진해구 신항4로 58' },
+    { name:'수출용신형연구용원자로 건설공사PJ', addr:'부산 기장군 장안읍 좌동리 288-7' },
+    { name:'울산 북항터미널 3단계건설공사PJ', addr:'울산 남구 신항로 852번길 41' },
+  ],
+  '제주': [
+    { name:'제주덕천', addr:'제주도 제주시 구좌읍 덕천리 산68' },
+  ],
+};
+
+// ── 유틸 ─────────────────────────────────────────────────────────────
+function getApiBase() { return localStorage.getItem('vercel_api_url') || 'https://daewooenc-weather.vercel.app'; }
+function saveApiUrl() {
+  const val = document.getElementById('api-url-input').value.trim().replace(/\/$/, '');
+  if (val) { localStorage.setItem('vercel_api_url', val); setBannerGreen(); loadAll(); }
+}
+function setBannerGreen() {
+  const b = document.getElementById('api-banner');
+  b.style.background='#EAF3DE'; b.style.borderColor='#639922'; b.style.color='#27500A';
+}
+window.addEventListener('load', () => {
+  const saved = getApiBase();
+  if (saved) { document.getElementById('api-url-input').value = saved; setBannerGreen(); }
+});
+
+function ptyIcon(pty) { return {'0':'☀️','1':'🌧️','2':'🌨️','3':'❄️','4':'🌦️','5':'🌧️','6':'🌨️','7':'❄️'}[pty]??'🌡️'; }
+function ptyDesc(pty) { return {'0':'맑음','1':'비','2':'비/눈','3':'눈','4':'소나기','5':'빗방울','6':'빗방울+눈','7':'눈날림'}[pty]??'-'; }
+function tempMeta(t) {
+if (t >= 38) return { label: '폭염중대경보(옥외작업 중지)', color: '#8B0000', bg: '#FDE8E8' };
+if (t >= 35) return { label: '폭염경보(옥외작업 최소화)', color: '#D94111', bg: '#FFF0EA' };
+if (t >= 33) return { label: '폭염주의보(시간당 15분 이상 휴식)', color: '#C67A00', bg: '#FFF7E6' };
+if (t >= 31) return { label: '시간당 15분 휴식', color: '#2B7318', bg: '#EAF5E6' };
+
+if (t >= 28) return { label: '더움', color: '#3B6D11', bg: '#EAF3DE' };
+if (t >= 25) return { label: '산뜻함', color: '#185FA5', bg: '#E6F1FB' };
+if (t >= 20)  return { label: '선선함', color: '#534AB7', bg: '#EEEDFE' };
+return { label: '보통', color: '#0C447C', bg: '#B5D4F4' };
+}
+function tempColor(t) {
+  if (t>=35) return '#A32D2D'; if (t>=28) return '#BA7517';
+  if (t>=20) return '#3B6D11'; if (t>=10) return '#185FA5';
+  if (t>=0)  return '#534AB7'; return '#0C447C';
+}
+
+// ── 동시 요청 제한기 (최대 4개 동시 실행) ────────────────────────────
+function makeLimiter(concurrency) {
+  let running = 0;
+  const queue = [];
+  function next() {
+    if (running >= concurrency || queue.length === 0) return;
+    running++;
+    const { fn, resolve, reject } = queue.shift();
+    fn().then(resolve).catch(reject).finally(() => { running--; next(); });
+  }
+  return function limit(fn) {
+    return new Promise((resolve, reject) => { queue.push({ fn, resolve, reject }); next(); });
+  };
+}
+const apiLimit = makeLimiter(4); // 동시 최대 4개 요청
+
+// 타임아웃 유틸
+function fetchWithTimeout(url, ms = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+async function fetchWeather(nx, ny) {
+  const base = getApiBase();
+  const FALLBACK_CUR  = { temp: null, feelsLike: null, humidity: null, wind: null, pty: '0' };
+  const FALLBACK_FCST = { feelsMax: null, feelsMin: null };
+
+  try {
+    const [curRes, fcstRes] = await Promise.all([
+      apiLimit(() => fetchWithTimeout(`${base}/api/weather?nx=${nx}&ny=${ny}&type=current`)
+        .then(r => r.ok ? r.json() : null).catch(() => null)),
+      apiLimit(() => fetchWithTimeout(`${base}/api/weather?nx=${nx}&ny=${ny}&type=forecast`)
+        .then(r => r.ok ? r.json() : null).catch(() => null)),
+    ]);
+
+    const cur  = (curRes  && curRes.temp  != null) ? curRes  : FALLBACK_CUR;
+    const fcst = (fcstRes && (fcstRes.feelsMax != null || fcstRes.feelsMin != null)) ? fcstRes : FALLBACK_FCST;
+    return { cur, fcst };
+
+  } catch (e) {
+    console.error('날씨 페치 실패:', e);
+    return { cur: FALLBACK_CUR, fcst: FALLBACK_FCST };
+  }
+}
+
+async function fetchAlert(regionName) {
+  try {
+    const base = getApiBase();
+    const res = await fetch(`${base}/api/alert?region=${encodeURIComponent(regionName)}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+function renderAlertBadge(alertData, regionName) {
+  if (!alertData || alertData.type === 'none' || !alertData.type)
+    return `<span class="alert-badge alert-none" id="alert-${regionName}"></span>`;
+  
+  if (alertData.type === 'critical')
+    return `<span class="alert-badge alert-critical" id="alert-${regionName}">🚨 폭염중대경보 발효중</span>`;
+  
+  if (alertData.type === 'warning')
+    return `<span class="alert-badge alert-warn" id="alert-${regionName}">🔴 폭염경보 발효중</span>`;
+  
+  if (alertData.type === 'watch')
+    return `<span class="alert-badge alert-watch" id="alert-${regionName}">🟡 폭염주의보 발효중</span>`;
+  
+  return `<span class="alert-badge alert-none" id="alert-${regionName}"></span>`;
+}
+// [렌더링 안전장치 추가] 데이터가 없을 때 - 이외에 undefined가 노출되지 않도록 방어
+function renderCard(r, data) {
+  const siteCount = (SITES[r.name]||[]).length;
+  if (!data) return `
+    <div class="card" onclick="openModal('${r.name}')" style="min-height:200px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;opacity:.5;">
+      <div class="region">${r.name}</div>
+      <span style="font-size:13px;color:var(--muted)">데이터를 불러올 수 없습니다</span>
+      <div class="site-count">현장 ${siteCount}개</div>
+    </div>`;
+
+  const cur = data.cur ?? {};
+  const fcst = data.fcst ?? {};
+
+  // null과 0을 정확히 구분 (0도도 유효한 온도값)
+  const feels      = cur.feelsLike != null ? cur.feelsLike : (cur.temp != null ? cur.temp : null);
+  const actualTemp = cur.temp != null ? cur.temp : null;
+  const feelsDisp  = feels != null ? `${feels}°C` : '-°C';
+  const tempDisp   = actualTemp != null ? `${actualTemp}°C` : '-°C';
+
+  const meta = tempMeta(feels != null ? Number(feels) : 0);
+
+  // 최고/최저 체감 표시 헬퍼
+  const showFeels = (v) => v != null ? `${v}°` : '-';
+
+  return `
+    <div class="card" onclick="openModal('${r.name}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <div class="region">${r.name}</div>
+          <div class="city">${r.city} 기준</div>
+          <div class="temp-now-label" style="margin-top:4px;">현재 체감온도</div>
+          <div class="temp-now" style="color:${meta.color}">${feelsDisp}</div>
+          <div class="temp-actual">실제 기온 ${tempDisp} · ${ptyDesc(cur.pty)}</div>
+        </div>
+        <div style="text-align:right;">
+          <div>
+            <div class="range-label">오늘 최고 체감</div>
+            <div class="range-val" style="color:${tempColor(fcst.feelsMax??0)}">${showFeels(fcst.feelsMax)}</div>
+          </div>
+          <div style="margin-top:4px;">
+            <div class="range-label">오늘 최저 체감</div>
+            <div class="range-val" style="color:${tempColor(fcst.feelsMin??0)}">${showFeels(fcst.feelsMin)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="meta"><span>💧 ${cur.humidity != null ? cur.humidity + '%' : '-%'}</span><span>💨 ${cur.wind != null ? cur.wind + 'm/s' : '-m/s'}</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+        <div>
+          <span class="badge" style="margin-top:0;color:${meta.color};background:${meta.bg}">${meta.label}</span>
+          <span class="alert-badge alert-loading" id="alert-${r.name}" style="display:block;margin-top:6px;">특보 확인중…</span>
+        </div>
+        <div style="font-size:22px;line-height:1;">${ptyIcon(cur.pty)}</div>
+      </div>
+      <div class="site-count">현장 ${siteCount}개 ›</div>
+    </div>`;
+}
+async function loadAll() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  document.getElementById('grid').innerHTML = REGIONS.map(()=>`<div class="skeleton"></div>`).join('');
+  document.getElementById('updated').textContent = '불러오는 중...';
+  try {
+    const results = await Promise.all(REGIONS.map(r => fetchWeather(r.nx, r.ny).catch(()=>null)));
+    document.getElementById('grid').innerHTML = REGIONS.map((r,i)=>renderCard(r,results[i])).join('');
+    const now = new Date();
+    document.getElementById('updated').textContent =
+      `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')} 기준`;
+    REGIONS.forEach(async r => {
+      const alertData = await fetchAlert(r.name).catch(()=>null);
+      const el = document.getElementById(`alert-${r.name}`);
+      if (el) { const tmp=document.createElement('div'); tmp.innerHTML=renderAlertBadge(alertData,r.name); el.replaceWith(tmp.firstElementChild); }
+      updateMapAlert(r.name, alertData?.type || 'none');  // ← 이 한 줄 추가
+    });
+  } catch(e) {
+    document.getElementById('grid').innerHTML = `<div class="error-box">⚠️ 데이터를 불러오지 못했습니다.<br>${e.message}</div>`;
+  } finally { btn.disabled=false; }
+}
+
+// ── 모달 ─────────────────────────────────────────────────────────────
+function openModal(regionName) {
+  const sites = SITES[regionName]||[];
+  document.getElementById('modal-title').textContent = `${regionName} 권역 · 현장 ${sites.length}개`;
+  document.getElementById('modal-body').innerHTML = sites.length
+    ? `<ul class="site-list">${sites.map((s,i)=>`
+        <li class="site-item" onclick="showSiteWeather('${regionName}',${i})">
+          <div class="site-name">${s.name}</div>
+          <div class="site-addr">${s.addr}</div>
+        </li>`).join('')}</ul>`
+    : `<div style="padding:3rem;text-align:center;color:var(--muted);">현장 정보가 없습니다.</div>`;
+  document.getElementById('modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal(e) { if (e.target===document.getElementById('modal')) closeModalDirect(); }
+function closeModalDirect() { document.getElementById('modal').classList.remove('open'); document.body.style.overflow=''; }
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModalDirect(); });
+
+// ── 현장별 날씨 (개별 격자 좌표 사용) ───────────────────────────────
+async function showSiteWeather(regionName, siteIndex) {
+  const site = SITES[regionName][siteIndex];
+
+  // 현장 개별 좌표 → 없으면 권역 대표 좌표 폴백
+  const regionDef = REGIONS.find(r=>r.name===regionName);
+  const coords = SITE_COORDS[site.name] || { nx: regionDef.nx, ny: regionDef.ny };
+  const isIndividual = !!SITE_COORDS[site.name];
+
+  document.getElementById('modal-title').textContent = site.name;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="site-weather visible">
+      <button class="back-btn" onclick="openModal('${regionName}')">← ${regionName} 권역 목록</button>
+      <div><div class="sw-name">${site.name}</div><div class="sw-addr">${site.addr}</div></div>
+      <div class="sw-loading">날씨 정보를 불러오는 중...</div>
+    </div>`;
+
+  try {
+    const { cur, fcst } = await fetchWeather(coords.nx, coords.ny);
+    const feels = cur.feelsLike??cur.temp;
+    const meta = tempMeta(feels);
+
+    document.getElementById('modal-body').innerHTML = `
+      <div class="site-weather visible">
+        <button class="back-btn" onclick="openModal('${regionName}')">← ${regionName} 권역 목록</button>
+        <div><div class="sw-name">${site.name}</div><div class="sw-addr">${site.addr}</div></div>
+        <div class="sw-big" style="color:${meta.color}">${feels}°C</div>
+        <div class="sw-sub">
+          현재 체감온도 · 실제 기온 ${cur.temp}°C · ${ptyDesc(cur.pty)} ${ptyIcon(cur.pty)}<br>
+          <span class="badge" style="display:inline-block;margin-top:8px;color:${meta.color};background:${meta.bg}">${meta.label}</span>
+        </div>
+        <div class="sw-grid">
+          <div class="sw-cell"><div class="sw-cell-label">💧 습도</div><div class="sw-cell-val">${cur.humidity}%</div></div>
+          <div class="sw-cell"><div class="sw-cell-label">💨 풍속</div><div class="sw-cell-val">${cur.wind}m/s</div></div>
+          <div class="sw-cell"><div class="sw-cell-label">🌡️ 오늘 최고 체감</div><div class="sw-cell-val" style="color:${tempColor(fcst.feelsMax??0)}">${fcst.feelsMax??'-'}°C</div></div>
+          <div class="sw-cell"><div class="sw-cell-label">🌡️ 오늘 최저 체감</div><div class="sw-cell-val" style="color:${tempColor(fcst.feelsMin??0)}">${fcst.feelsMin??'-'}°C</div></div>
+        </div>
+        <div style="font-size:11px;color:var(--hint);margin-top:8px;">
+          ※ 기상청 격자 (nx:${coords.nx}, ny:${coords.ny}) 기준${isIndividual ? ' · 현장 개별 좌표 적용' : ' · 권역 대표 좌표 적용'}
+        </div>
+      </div>`;
+  } catch(e) {
+    document.getElementById('modal-body').innerHTML = `
+      <div class="site-weather visible">
+        <button class="back-btn" onclick="openModal('${regionName}')">← ${regionName} 권역 목록</button>
+        <div class="sw-error">⚠️ 날씨 정보를 불러오지 못했습니다.<br>${e.message}</div>
+      </div>`;
+  }
+}
+// ── 지도 관련 ─────────────────────────────────────────────────────────
+const REGION_NAME_MAP = {
+  '서울특별시':   '서울',
+  '인천광역시':   '인천',
+  '경기도':       '경기',
+  '강원도':       '강원',
+  '강원특별자치도': '강원',
+  '충청북도':     '충북',
+  '충청남도':     '충남',
+  '대전광역시':   '충남',
+  '세종특별자치시': '충남',
+  '전라북도':     '전북',
+  '전북특별자치도': '전북',
+  '전라남도':     '전남',
+  '광주광역시':   '전남',
+  '경상북도':     '경북',
+  '대구광역시':   '경북',
+  '경상남도':     '경남',
+  '부산광역시':   '경남',
+  '울산광역시':   '경남',
+  '제주특별자치도': '제주',
+};
+
+const ALERT_FILL = {
+  critical: '#F09595',
+  warning:  '#FFEAEA',
+  watch:    '#FFF3CD',
+  none:     '#E1F5EE',
+};
+const ALERT_STROKE = {
+  critical: '#E24B4A',
+  warning:  '#FFB3B3',
+  watch:    '#FFEAA7',
+  none:     '#9FE1CB',
+};
+
+let mapSvg = null;
+const regionAlertState = {};
+
+function initMap(geojson) {
+  const W = 260, H = 420;
+  const projection = d3.geoMercator().fitSize([W, H], geojson);
+  const path = d3.geoPath().projection(projection);
+
+  mapSvg = d3.select('#korea-map')
+    .append('svg')
+    .attr('width', W)
+    .attr('height', H)
+    .style('display', 'block');
+
+  mapSvg.selectAll('path')
+    .data(geojson.features)
+    .enter()
+    .append('path')
+    .attr('d', path)
+    .attr('fill', '#E1F5EE')
+    .attr('stroke', '#fff')
+    .attr('stroke-width', 1.2)
+    .attr('cursor', 'pointer')
+    .attr('class', d => {
+      const rname = REGION_NAME_MAP[d.properties.name] || '';
+      return 'map-region region-' + rname;
+    })
+    .on('click', (event, d) => {
+      const rname = REGION_NAME_MAP[d.properties.name] || '';
+      if (rname) openModal(rname);
+    })
+    .on('mouseover', function() {
+      d3.select(this).attr('opacity', 0.75);
+    })
+    .on('mouseout', function() {
+      d3.select(this).attr('opacity', 1);
+    });
+}
+
+function updateMapAlert(regionName, alertType) {
+  regionAlertState[regionName] = alertType;
+  if (!mapSvg) return;
+  mapSvg.selectAll('.region-' + regionName)
+    .attr('fill',   ALERT_FILL[alertType]   || ALERT_FILL.none)
+    .attr('stroke', ALERT_STROKE[alertType] || ALERT_STROKE.none);
+}
+
+loadAll();
+</script>
+</body>
+</html>
